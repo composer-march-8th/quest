@@ -303,7 +303,7 @@ function App() {
 
   const submitHiddenCode = () => {
     if (hiddenAnswer.trim().toUpperCase() !== HIDDEN_CODE) {
-      setHiddenError('Код неверный. Подсказка: откройте инспектор элемента.')
+      setHiddenError('Код неверный.')
       return
     }
 
@@ -437,8 +437,7 @@ function App() {
             </button>
             {showTask2Hint && (
               <p className="task-hint">
-                Подсказка: код спрятан в `div` с id `march8-secret` в самом начале `body`. Нужное значение лежит
-                в тексте этого элемента.
+                Подсказка: ответ спрятан в коде элемента (Fn+F12 / F12)
               </p>
             )}
             <input
