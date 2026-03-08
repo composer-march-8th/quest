@@ -420,7 +420,7 @@ function App() {
               Перемешать заново
             </button>
 
-            <button className="btn" onClick={() => setStep(2)} type="button">
+            <button className="btn" disabled={!isPuzzleSolved} onClick={() => setStep(2)} type="button">
               Готово, перейти к заданию 2
             </button>
           </div>
