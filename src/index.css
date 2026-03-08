@@ -125,7 +125,8 @@ body {
 .puzzle-side {
   position: relative;
   width: 170px;
-  min-height: 300px;
+  min-height: 320px;
+  padding: 10px;
   border-radius: 14px;
   border: none;
   background: transparent;
@@ -258,7 +259,7 @@ body {
 
   .puzzle-side {
     width: 100%;
-    min-height: 160px;
+    min-height: 300px;
   }
 
   .puzzle-board {

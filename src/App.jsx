@@ -146,6 +146,7 @@ function App() {
   const [trayPieces, setTrayPieces] = useState(() => createTrayPieces())
   const [boardTiles, setBoardTiles] = useState(() => Array(PUZZLE_TILE_COUNT).fill(null))
   const [zCounter, setZCounter] = useState(100)
+  const [tapSelection, setTapSelection] = useState(null)
   const [hiddenAnswer, setHiddenAnswer] = useState('')
   const [hiddenError, setHiddenError] = useState('')
   const [showTask2Hint, setShowTask2Hint] = useState(false)
@@ -163,6 +164,7 @@ function App() {
     setTrayPieces(createTrayPieces())
     setBoardTiles(Array(PUZZLE_TILE_COUNT).fill(null))
     setZCounter(100)
+    setTapSelection(null)
     setShowTask2Hint(false)
   }
 
@@ -230,6 +232,94 @@ function App() {
 
   const putTileBackToTray = (tile, side, x, y, z) => {
     setTrayPieces((pieces) => [...pieces, { tile, side, x, y, z }])
+  }
+
+  const moveBoardTileToTray = (tile, side = 'left') => {
+    const sourceIndex = boardTiles.indexOf(tile)
+    if (sourceIndex < 0) return
+
+    setBoardTiles((prev) => {
+      const next = [...prev]
+      next[sourceIndex] = null
+      return next
+    })
+
+    setZCounter((prev) => {
+      const next = prev + 1
+      putTileBackToTray(tile, side, randomInt(6, 96), randomInt(6, 250), next)
+      return next
+    })
+  }
+
+  const handleTrayPieceTap = (event, tile) => {
+    event.stopPropagation()
+
+    if (tapSelection?.source === 'tray' && tapSelection.tile === tile) {
+      setTapSelection(null)
+      return
+    }
+
+    setTapSelection({ source: 'tray', tile })
+  }
+
+  const handleTrayAreaTap = (side) => {
+    if (tapSelection?.source !== 'board') return
+    moveBoardTileToTray(tapSelection.tile, side)
+    setTapSelection(null)
+  }
+
+  const handleBoardTap = (slotIndex) => {
+    const slotTile = boardTiles[slotIndex]
+
+    if (tapSelection === null) {
+      if (slotTile !== null) {
+        setTapSelection({ source: 'board', tile: slotTile })
+      }
+      return
+    }
+
+    if (tapSelection.source === 'tray') {
+      const draggedPiece = trayPieces.find((piece) => piece.tile === tapSelection.tile)
+      if (!draggedPiece) {
+        setTapSelection(null)
+        return
+      }
+
+      const nextBoard = [...boardTiles]
+      const replacedTile = nextBoard[slotIndex]
+      nextBoard[slotIndex] = tapSelection.tile
+      setBoardTiles(nextBoard)
+      setTrayPieces((pieces) => pieces.filter((piece) => piece.tile !== tapSelection.tile))
+
+      if (replacedTile !== null) {
+        setZCounter((prev) => {
+          const next = prev + 1
+          putTileBackToTray(replacedTile, draggedPiece.side, draggedPiece.x, draggedPiece.y, next)
+          return next
+        })
+      }
+
+      setTapSelection(null)
+      return
+    }
+
+    const sourceIndex = boardTiles.indexOf(tapSelection.tile)
+    if (sourceIndex < 0) {
+      setTapSelection(null)
+      return
+    }
+
+    if (sourceIndex === slotIndex) {
+      setTapSelection(null)
+      return
+    }
+
+    const nextBoard = [...boardTiles]
+    const temp = nextBoard[sourceIndex]
+    nextBoard[sourceIndex] = nextBoard[slotIndex]
+    nextBoard[slotIndex] = temp
+    setBoardTiles(nextBoard)
+    setTapSelection(null)
   }
 
   const handleBoardDrop = (slotIndex, event) => {
@@ -360,23 +450,27 @@ function App() {
 
         {step === 1 && (
           <div className="task">
-            <h2>Задание 1. Собери паззл-цветок 4x4</h2>
+            <h2>Задание 1. Собери пазл-цветок 4x4</h2>
             <p className="task-text">
-              Перетаскивай детали мышкой: из боковых зон в центр, между ячейками и обратно на бок.
+              Перетаскивай мышкой или на мобильном выбирай тапом кусочек, затем ячейку.
             </p>
             <div className="puzzle-layout">
               <div
                 className="puzzle-side"
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => handleTrayDrop('left', event)}
+                onClick={() => handleTrayAreaTap('left')}
               >
                 {leftTrayPieces.map((piece) => (
                   <button
                     key={`left-${piece.tile}`}
-                    className="puzzle-tile puzzle-piece"
+                    className={`puzzle-tile puzzle-piece ${
+                      tapSelection?.source === 'tray' && tapSelection.tile === piece.tile ? 'selected' : ''
+                    }`}
                     draggable
                     onDragStart={(event) => handleDragStart(event, { from: 'tray', tile: piece.tile })}
                     onMouseDown={() => bringTrayPieceToFront(piece.tile)}
+                    onClick={(event) => handleTrayPieceTap(event, piece.tile)}
                     style={{ ...tileStyle(piece.tile), left: `${piece.x}px`, top: `${piece.y}px`, zIndex: piece.z }}
                     type="button"
                   />
@@ -387,11 +481,14 @@ function App() {
                 {boardTiles.map((tile, index) => (
                   <button
                     key={`board-${index}`}
-                    className={`puzzle-tile ${tile === null ? 'puzzle-slot' : ''}`}
+                    className={`puzzle-tile ${tile === null ? 'puzzle-slot' : ''} ${
+                      tapSelection?.tile === tile ? 'selected' : ''
+                    }`}
                     draggable={tile !== null}
                     onDragStart={(event) => handleDragStart(event, { from: 'board', tile })}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={(event) => handleBoardDrop(index, event)}
+                    onClick={() => handleBoardTap(index)}
                     style={tile === null ? undefined : tileStyle(tile)}
                     type="button"
                   />
@@ -402,14 +499,18 @@ function App() {
                 className="puzzle-side"
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => handleTrayDrop('right', event)}
+                onClick={() => handleTrayAreaTap('right')}
               >
                 {rightTrayPieces.map((piece) => (
                   <button
                     key={`right-${piece.tile}`}
-                    className="puzzle-tile puzzle-piece"
+                    className={`puzzle-tile puzzle-piece ${
+                      tapSelection?.source === 'tray' && tapSelection.tile === piece.tile ? 'selected' : ''
+                    }`}
                     draggable
                     onDragStart={(event) => handleDragStart(event, { from: 'tray', tile: piece.tile })}
                     onMouseDown={() => bringTrayPieceToFront(piece.tile)}
+                    onClick={(event) => handleTrayPieceTap(event, piece.tile)}
                     style={{ ...tileStyle(piece.tile), left: `${piece.x}px`, top: `${piece.y}px`, zIndex: piece.z }}
                     type="button"
                   />
