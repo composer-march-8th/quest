@@ -664,7 +664,7 @@ function App() {
         {step === 4 && (
           <div className="task done">
             <h2>Поздравляем, {userId}!</h2>
-            <p className="task-text">Все задания выполнены. Ваш сертификат:</p>
+            <p className="task-text">Все задания выполнены. Ваш сертификат в Ozon:</p>
             <div className="certificate-wrap">
               <p className="certificate">{promoCode}</p>
               <button
@@ -681,6 +681,16 @@ function App() {
               </button>
             </div>
             {copyMessage && <p className="task-text">{copyMessage}</p>}
+            <div className="task-hint">
+              <p>Чтобы активировать сертификат:</p>
+              <ol>
+                <li>Авторизуйтесь на сайте или в приложении Ozon.</li>
+                <li>
+                  В разделе "Коды и сертификаты" на сайте или в приложении введите код и нажмите
+                  "Применить".
+                </li>
+              </ol>
+            </div>
             <p className="task-text">С праздником весны и красоты! 🌷</p>
           </div>
         )}
