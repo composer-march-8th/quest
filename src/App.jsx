@@ -1,12 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const PUZZLE_SIZE = 4
 const PUZZLE_TILE_COUNT = PUZZLE_SIZE * PUZZLE_SIZE
 const TRAY_TILE_SIZE = 58
 const HIDDEN_CODE = 'M8-NEXT-2026'
-const PROMO_BY_ID = {
-  '@test': 'PROMO-MARCH8-PLACEHOLDER',
-}
+
+const CERT_API_BASE = 'https://quest-certificates-api.quest-api.workers.dev'
 const ANAGRAM_WORDS = [
   { answer: 'COMPOSER', hint: 'Команда, которая подготовила вам этот квест :)' },
   { answer: 'РОЗА', hint: 'Классический цветок любви' },
@@ -62,6 +61,17 @@ const FLOWER_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(`
   <path d="M302 515 C269 500, 244 500, 226 518 C253 538, 284 538, 302 515Z" fill="#37aa5a"/>
 </svg>
 `)}`
+
+function logSpaError(context, error, extra = undefined) {
+  const timestamp = new Date().toISOString()
+  console.error('[SPA_ERROR]', {
+    timestamp,
+    context,
+    message: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    extra,
+  })
+}
 
 function normalizeWord(value) {
   return value.trim().toUpperCase().replaceAll('Ё', 'Е')
@@ -125,18 +135,17 @@ function generateAnagrams(words) {
   })
 }
 
-function makeCertificateCode(userId) {
-  const cleanId = userId.replace('@', '').toUpperCase()
-  const seed = cleanId
-    .split('')
-    .reduce((acc, char, index) => acc + char.charCodeAt(0) * (index + 1), 0)
-  const checksum = String(seed % 10000).padStart(4, '0')
-  return `CERT-8M-${cleanId || 'GUEST'}-${checksum}`
-}
-
-function getPromoCode(userId) {
-  const normalized = userId.trim().toLowerCase()
-  return PROMO_BY_ID[normalized] || makeCertificateCode(userId)
+async function requestCertificateApi(path, userId) {
+  const response = await fetch(`${CERT_API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
+  })
+  const data = await response.json()
+  if (!response.ok) {
+    throw new Error(data.error || 'Ошибка API')
+  }
+  return data
 }
 
 function App() {
@@ -154,9 +163,33 @@ function App() {
   const [anagramInput, setAnagramInput] = useState(() => Array(ANAGRAM_WORDS.length).fill(''))
   const [anagramError, setAnagramError] = useState('')
   const [copyMessage, setCopyMessage] = useState('')
-  const promoCode = useMemo(() => getPromoCode(userId), [userId])
+  const [promoCode, setPromoCode] = useState('')
+  const [isCheckingId, setIsCheckingId] = useState(false)
+  const [isIssuingPromo, setIsIssuingPromo] = useState(false)
   const leftTrayPieces = trayPieces.filter((piece) => piece.side === 'left')
   const rightTrayPieces = trayPieces.filter((piece) => piece.side === 'right')
+
+  useEffect(() => {
+    const onWindowError = (event) => {
+      logSpaError('window.error', event.error || event.message, {
+        source: event.filename,
+        line: event.lineno,
+        column: event.colno,
+      })
+    }
+
+    const onUnhandledRejection = (event) => {
+      logSpaError('window.unhandledrejection', event.reason)
+    }
+
+    window.addEventListener('error', onWindowError)
+    window.addEventListener('unhandledrejection', onUnhandledRejection)
+
+    return () => {
+      window.removeEventListener('error', onWindowError)
+      window.removeEventListener('unhandledrejection', onUnhandledRejection)
+    }
+  }, [])
 
   const isPuzzleSolved = boardTiles.every((tile, index) => tile === index)
 
@@ -166,9 +199,11 @@ function App() {
     setZCounter(100)
     setTapSelection(null)
     setShowTask2Hint(false)
+    setCopyMessage('')
+    setPromoCode('')
   }
 
-  const handleStart = () => {
+  const handleStart = async () => {
     const normalizedId = userId.trim().toLowerCase()
 
     if (!normalizedId.startsWith('@') || normalizedId.length < 2) {
@@ -176,9 +211,26 @@ function App() {
       return
     }
 
-    if (!Object.hasOwn(PROMO_BY_ID, normalizedId)) {
-      setIdError('Такого пользователя нет в списке доступа')
-      return
+    if (!CERT_API_BASE) {
+      if (!Object.hasOwn(DEMO_PROMO_BY_ID, normalizedId)) {
+        setIdError('Такого пользователя нет в списке доступа')
+        return
+      }
+    } else {
+      setIsCheckingId(true)
+      try {
+        const data = await requestCertificateApi('/validate', normalizedId)
+        if (!data.allowed) {
+          setIdError('Такого пользователя нет в списке доступа')
+          return
+        }
+      } catch (error) {
+        logSpaError('handleStart.validate', error, { userId: normalizedId })
+        setIdError('Ошибка проверки id. Попробуйте позже.')
+        return
+      } finally {
+        setIsCheckingId(false)
+      }
     }
 
     setUserId(normalizedId)
@@ -202,7 +254,8 @@ function App() {
     if (!raw) return null
     try {
       return JSON.parse(raw)
-    } catch {
+    } catch (error) {
+      logSpaError('parseDragPayload', error, { raw })
       return null
     }
   }
@@ -402,7 +455,7 @@ function App() {
     setStep(3)
   }
 
-  const submitAnagrams = () => {
+  const submitAnagrams = async () => {
     const isValid = anagrams.every(
       (item, index) => normalizeWord(anagramInput[index]) === normalizeWord(item.answer),
     )
@@ -412,7 +465,31 @@ function App() {
       return
     }
 
-    setAnagramError('')
+    if (!CERT_API_BASE) {
+      const localPromo = DEMO_PROMO_BY_ID[userId]
+      if (!localPromo) {
+        setAnagramError('Сертификат не настроен для этого id')
+        return
+      }
+      setPromoCode(localPromo)
+      setAnagramError('')
+      setStep(4)
+      return
+    }
+
+    setIsIssuingPromo(true)
+    try {
+      const data = await requestCertificateApi('/certificate', userId)
+      setPromoCode(data.promoCode)
+      setAnagramError('')
+    } catch (error) {
+      logSpaError('submitAnagrams.certificate', error, { userId })
+      setAnagramError(error.message || 'Не удалось выдать сертификат')
+      return
+    } finally {
+      setIsIssuingPromo(false)
+    }
+
     setStep(4)
   }
 
@@ -420,7 +497,8 @@ function App() {
     try {
       await navigator.clipboard.writeText(promoCode)
       setCopyMessage('Код скопирован в буфер обмена')
-    } catch {
+    } catch (error) {
+      logSpaError('copyPromoCode', error)
       setCopyMessage('Не удалось скопировать автоматически')
     }
   }
@@ -442,8 +520,8 @@ function App() {
               placeholder="@example"
             />
             {idError && <p className="error">{idError}</p>}
-            <button className="btn" onClick={handleStart} type="button">
-              Начать задания
+            <button className="btn" disabled={isCheckingId} onClick={handleStart} type="button">
+              {isCheckingId ? 'Проверяем ID...' : 'Начать задания'}
             </button>
           </div>
         )}
@@ -577,8 +655,8 @@ function App() {
               ))}
             </div>
             {anagramError && <p className="error">{anagramError}</p>}
-            <button className="btn" onClick={submitAnagrams} type="button">
-              Завершить квест
+            <button className="btn" disabled={isIssuingPromo} onClick={submitAnagrams} type="button">
+              {isIssuingPromo ? 'Выдаём сертификат...' : 'Завершить квест'}
             </button>
           </div>
         )}
